@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ComfyUI Queue</title>
+    <link rel="stylesheet" href="static/styles.css" />
+</head>
+<body>
+    <h1>Generate Image</h1>
+    <form action="/submit" method="post">
+        <label>Subject: <input type="textarea" name="subject" required></label><br>
+        <label>Pose: <input type="textarea" name="pose" required></label><br>
+        <label>Setting: <input type="textarea" name="setting" required></label><br>
+        <label>Other: <input type="textarea" name="other" required></label><br>
+
+        <label>Realism LoRA: <input type="number" step="0.01" name="realism_lora" required></label><br>
+        <label>Detail LoRA: <input type="number" step="0.01" name="detail_lora" required></label><br>
+
+        <label>Workflow:
+            <select name="workflow_type">
+                <option value="smoke">Smoke Test</option>
+                <option value="final">Final Image</option>
+            </select>
+        </label><br>
+
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
