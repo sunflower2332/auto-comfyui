@@ -1,160 +1,129 @@
 #!/usr/bin/env python3
-import argparse
-import json
-import os
-import openai
+import argparse, json, os, requests
+from pathlib import Path
+import random
+from openai import OpenAI
+from dotenv import load_dotenv
 
-# -----------------------------------------------------------------------------
-# Config
-# -----------------------------------------------------------------------------
-openai.api_key = os.getenv("OPENAI_API_KEY")
-MODEL = "gpt-4o-mini"  # or another ChatCompletion-capable model
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+MODEL = "gpt-4o-mini"
 
-# -----------------------------------------------------------------------------
-# Argument Parsing
-# -----------------------------------------------------------------------------
 def parse_args():
-    p = argparse.ArgumentParser(
-        description="Update a ComfyUI workflow with a transformed prompt + LoRA strengths"
-    )
-    p.add_argument(
-        "--workflow_type",
-        choices=["smoke", "final"],
-        required=True,
-        help="Which JSON workflow to update: 'smoke' for smoke_test.json or 'final' for final_image.json",
-    )
-    p.add_argument(
-        "--subject", type=str, required=True, help="Subject text"
-    )
-    p.add_argument(
-        "--pose", type=str, required=True, help="Pose description"
-    )
-    p.add_argument(
-        "--setting", type=str, required=True, help="Setting description"
-    )
-    p.add_argument(
-        "--other", type=str, required=True, help="Other details"
-    )
-    p.add_argument(
-        "--realism_lora", type=float, required=True, help="Strength for Realism_LORA"
-    )
-    p.add_argument(
-        "--detail_lora", type=float, required=True, help="Strength for Detail_LORA"
-    )
-    p.add_argument(
-        "--workflow_path",
-        type=str,
-        default=None,
-        help="Optional path override for the workflow JSON",
-    )
+    p = argparse.ArgumentParser()
+    p.add_argument("--workflow_type",
+                   choices=["smoke", "final"], required=True)
+    p.add_argument("--subject",      required=True)
+    p.add_argument("--pose",         required=True)
+    p.add_argument("--setting",      required=True)
+    p.add_argument("--other",        required=True)
+    p.add_argument("--realism_lora", type=float, required=True)
+    p.add_argument("--detail_lora",  type=float, required=True)
+    p.add_argument("--workflow_path", type=str, default=None)
+    p.add_argument("--output_path",   type=str, default=None)
     return p.parse_args()
 
-# -----------------------------------------------------------------------------
-# Prompt Building & Transformation
-# -----------------------------------------------------------------------------
 def build_raw_prompt(subject, pose, setting, other):
-    """Concatenate each string with a trailing space."""
     return f"{subject} {pose} {setting} {other} "
 
-def transform_prompt_with_openai(raw_prompt: str) -> str:
-    """
-    Call OpenAI to turn the concatenated prompt into one seamless
-    ComfyUI-style prompt.
-    """
-    system_msg = (
-        "You are an expert prompt engineer for ComfyUI/Stable Diffusion. "
-        "Take the user's raw prompt pieces and output a single, "
-        "well-formatted positive prompt string suitable for ComfyUI's CLIPTextEncode node."
-    )
-    user_msg = (
-        "Here are the raw prompt pieces:\n\n"
-        f"{raw_prompt}\n\n"
-        "Please return just the combined, clean prompt."
-    )
-
-    resp = openai.ChatCompletion.create(
+def transform_prompt(raw: str) -> str:
+    resp = client.chat.completions.create(
         model=MODEL,
         messages=[
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
+            {"role": "system",
+             "content": (
+               "You are an expert prompt engineer for ComfyUI/Stable Diffusion. "
+               "Combine the raw prompt into a single, clean prompt, Danbooru/tag based propmt. Example: woman, large breasts, narow waist, tall. Return the prompt only."
+             )},
+            {"role": "user", "content": raw},
         ],
         temperature=0.7,
-        max_tokens=200,
+        max_tokens=300,
     )
     return resp.choices[0].message.content.strip()
 
-# -----------------------------------------------------------------------------
-# Workflow JSON Handling
-# -----------------------------------------------------------------------------
-def load_workflow(path: str) -> dict:
+def load_json(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_workflow(data: dict, path: str):
+def save_json(obj, path):
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"Saved updated workflow to {path}")
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+    print(f"✅ Wrote updated workflow to {path}")
 
-# -----------------------------------------------------------------------------
-# Node Updates
-# -----------------------------------------------------------------------------
-def update_prompt_node(flow: dict, new_prompt: str):
-    for node in flow.get("nodes", []):
-        meta = node.get("_meta", {})
-        if meta.get("title") == "POS":
-            # assume the node input key is "text"
-            node["inputs"]["text"] = new_prompt
-            return
-    raise ValueError("No node titled 'POS' found")
+def update_and_inject(input_path, output_path, prompt, realism, detail, seed=None):
+    flow = load_json(input_path)
 
-def update_lora_strength(flow: dict, lora_title: str, strength: float):
-    for node in flow.get("nodes", []):
-        meta = node.get("_meta", {})
-        if meta.get("title") == lora_title:
-            # assume the node input key is "strength"
-            node["inputs"]["strength"] = strength
-            return
-    raise ValueError(f"No node titled '{lora_title}' found")
+    # Debug print to confirm titles
+    titles = [n.get("_meta",{}).get("title") for n in flow.values()]
+    print("DEBUG node titles:", titles)
 
-def update_workflow(path: str, prompt: str, realism: float, detail: float):
-    flow = load_workflow(path)
-    update_prompt_node(flow, prompt)
-    update_lora_strength(flow, "Realism_LORA", realism)
-    update_lora_strength(flow, "Detail_LORA", detail)
-    save_workflow(flow, path)
+    # 1) Inject into the POS node
+    for node in flow.values():
+        if node.get("_meta",{}).get("title","").strip() == "POS":
+            node["inputs"]["text"] = prompt
+            break
+    else:
+        raise ValueError(f"No POS node found; found titles {titles}")
 
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
+    # 2) Inject LoRA strengths
+    for which, strength in (("Realism_LORA", realism),
+                            ("Detail_LORA",  detail)):
+        for node in flow.values():
+            if node.get("_meta",{}).get("title","").strip() == which:
+                node["inputs"]["strength"] = strength
+                break
+        else:
+            raise ValueError(f"No node titled {which!r}; found titles {titles}")   
+    
+    # 3) Determine and inject seed into every KSampler
+    #    Use provided seed or pick a new random one
+    seed_value = seed if seed is not None else random.randint(0, 2**53 - 1)
+    for node in flow.values():
+        if node.get("class_type") == "KSampler":
+            node["inputs"]["seed"] = seed_value
+
+   # 4) Save _only_ the node map
+    save_json(flow, output_path)
+    return flow  # return the raw workflow dict
+
 def main():
     args = parse_args()
 
-    # Determine which workflow file to use
-    if args.workflow_path:
-        workflow_file = args.workflow_path
-    else:
-        workflow_file = (
-            "smoke_test.json" if args.workflow_type == "smoke"
-            else "final_image.json"
-        )
+    master = args.workflow_path or (
+        "smoke_test.json" if args.workflow_type == "smoke"
+        else "final_image.json"
+    )
+    out = args.output_path or f"{args.workflow_type}_updated.json"
 
-    # 1) Build raw concatenated prompt
-    raw = build_raw_prompt(
-        args.subject, args.pose, args.setting, args.other
+    raw = build_raw_prompt(args.subject, args.pose,
+                           args.setting, args.other)
+    print("Transforming prompt via OpenAI…")
+    new_prompt = transform_prompt(raw)
+    print("→", new_prompt)
+
+    # Update the workflow on disk and get back the raw node map
+    node_map = update_and_inject(
+        master, out, new_prompt,
+        args.realism_lora, args.detail_lora
     )
 
-    # 2) Transform via OpenAI
-    print("Transforming prompt via OpenAI...")
-    new_prompt = transform_prompt_with_openai(raw)
-    print("→ Transformed prompt:", new_prompt)
+    # 5) Wrap exactly as the old script did and queue
+    import uuid
+    job_id = str(uuid.uuid4())
+    payload = {
+        "prompt": node_map,        # entire node map under "prompt"
+        "client_id": job_id,
+        "filename_prefix": job_id,
+    }
+    try:
+        print("→ Queueing to ComfyUI at 127.0.0.1:8188/prompt…")
+        r = requests.post("http://127.0.0.1:8188/prompt",
+                          json=payload, timeout=5)
+        r.raise_for_status()
+        print(f"🚀 Queued! ComfyUI response: {r.text}")
+    except Exception as e:
+        print("❌ Queue failed:", e)
 
-    # 3) Update workflow JSON
-    update_workflow(
-        workflow_file,
-        new_prompt,
-        args.realism_lora,
-        args.detail_lora,
-    )
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
