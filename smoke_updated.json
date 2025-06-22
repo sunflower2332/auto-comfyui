@@ -54,7 +54,7 @@
   },
   "6": {
     "inputs": {
-      "seed": 951944332861881,
+      "seed": 5835580606497942,
       "steps": 35,
       "cfg": 5,
       "sampler_name": "dpmpp_2m_sde",
@@ -95,7 +95,7 @@
         "4",
         1
       ],
-      "strength": 0.4
+      "strength": 0.35
     },
     "class_type": "LoraLoader",
     "_meta": {
@@ -117,7 +117,7 @@
   },
   "9": {
     "inputs": {
-      "text": "person, standing, photo studio, smiling, grey sweater, blue jeans",
+      "text": "woman, tight red crop top, blue panties, natural breasts, huge ass, standing in a bedroom, blonde hair, brown eyes, pale skin, detailed face",
       "clip": [
         "3",
         0

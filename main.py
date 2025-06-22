@@ -24,7 +24,7 @@ def parse_args():
     return p.parse_args()
 
 def build_raw_prompt(subject, pose, setting, other):
-    return f"{subject} {pose} {setting} {other} "
+    return f"score_9 score_8up, score_7up{subject} {pose} {setting} {other} "
 
 def transform_prompt(raw: str) -> str:
     resp = client.chat.completions.create(

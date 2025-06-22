@@ -13,19 +13,10 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
   <style>
-    /* Make the layout stretch and separate history */
-    html, body {
-      height: 100%;
-    }
-    .full-height {
-      min-height: 100%;
-    }
-    #history-col {
-      border-right: 1px solid #ddd;
-    }
-    #history-col .list-group-item {
-      cursor: pointer;
-    }
+    html, body { height: 100%; }
+    .full-height { min-height: 100%; }
+    #history-col { border-right: 1px solid #ddd; }
+    #history-col .list-group-item { cursor: pointer; }
   </style>
 </head>
 <body class="bg-light full-height d-flex align-items-start">
@@ -94,7 +85,7 @@
               </select>
             </div>
             <!-- Seed (optional) -->
-            <div class="mb-4">
+            <div class="mb-3">
               <label for="seed" class="form-label">Seed (leave empty for random)</label>
               <input
                 type="number"
@@ -102,6 +93,18 @@
                 id="seed"
                 name="seed"
                 placeholder="e.g. 123456789012345"
+              />
+            </div>
+            <!-- Executions (ignored if seed provided) -->
+            <div class="mb-4">
+              <label for="executions" class="form-label">Executions (if no seed)</label>
+              <input
+                type="number"
+                min="1"
+                value="1"
+                class="form-control"
+                id="executions"
+                name="executions"
               />
             </div>
 
@@ -146,7 +149,9 @@
     // In-memory history of queued entries
     const history = [];
 
-    // Render the history list
+    // Polling interval ID
+    let pollIntervalID = null;
+
     function renderHistory() {
       const ul = document.getElementById("historyList");
       ul.innerHTML = "";
@@ -154,7 +159,7 @@
         ul.innerHTML = '<li class="list-group-item text-muted">No prompts queued yet</li>';
         return;
       }
-      history.forEach((entry, idx) => {
+      history.forEach(entry => {
         const li = document.createElement("li");
         li.className = "list-group-item";
         li.innerHTML = `
@@ -165,11 +170,12 @@
           <div class="mt-1"><strong>Prompt:</strong> ${entry.prompt.slice(0, 50)}…</div>
           <div class="mt-1">
             <small>
-              Realism: ${entry.realism_lora},
-              Detail: ${entry.detail_lora},
-              Seed: ${entry.seed}
+              Executions: ${entry.executions},
+              Seed: ${entry.seed !== null ? entry.seed : "random"}
             </small>
-          </div>`;
+          </div>
+          <div><small>Realism: ${entry.realism_lora}, Detail: ${entry.detail_lora}</small></div>
+        `;
         li.addEventListener("click", () => {
           if (confirm("Re-queue this prompt?")) {
             queueFinalPrompt(entry);
@@ -178,43 +184,94 @@
         ul.appendChild(li);
       });
     }
+    const seedInput = document.getElementById("seed");
+  const execInput = document.getElementById("executions");
 
-    // Poll queue_status every 15 seconds
-    async function updateQueueStatus() {
-      try {
-        const res = await fetch("/queue_status");
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        const running = Array.isArray(data.queue_running) ? data.queue_running.length : 0;
-        const pending = Array.isArray(data.queue_pending) ? data.queue_pending.length : 0;
-        document.getElementById("queueCount").innerText   = running + pending;
-        document.getElementById("queueRunning").innerText = running;
-        document.getElementById("queuePending").innerText = pending;
-      } catch (err) {
-        console.error("Queue status error:", err);
-      }
+  // On every change in the seed box, enable/disable executions
+  seedInput.addEventListener("input", () => {
+    if (seedInput.value.trim() !== "") {
+      execInput.disabled = true;
+      execInput.classList.add("bg-light");  // optional: visually cue disabled
+    } else {
+      execInput.disabled = false;
+      execInput.classList.remove("bg-light");
     }
+  });
+    // Poll queue_status every 15 seconds
+  async function updateQueueStatus() {
+    try {
+      const res = await fetch("/queue_status");
+      const data = await res.json();
+      const running = Array.isArray(data.queue_running) ? data.queue_running.length : 0;
+      const pending = Array.isArray(data.queue_pending) ? data.queue_pending.length : 0;
+      const total   = running + pending;
 
-    // Send final prompt to /generate_image and record history
+      document.getElementById("queueCount").innerText   = total;
+      document.getElementById("queueRunning").innerText = running;
+      document.getElementById("queuePending").innerText = pending;
+
+      // If we've drained the queue, stop polling until next enqueue
+      if (total === 0) {
+        stopPolling();
+      }
+    } catch (err) {
+      console.error("Queue status error:", err);
+      // On error, also stop to avoid rapid failures
+      stopPolling();
+    }
+  }
+    // Start polling every 15s (if not already)
+  function startPolling() {
+    if (pollIntervalID === null) {
+      updateQueueStatus();                           // kick off immediately
+      pollIntervalID = setInterval(updateQueueStatus, 15000);
+    }
+  }
+
+  // Stop the interval
+  function stopPolling() {
+    if (pollIntervalID !== null) {
+      clearInterval(pollIntervalID);
+      pollIntervalID = null;
+    }
+  }
+
+    // Queue one or many executions
     async function queueFinalPrompt(entry) {
+      const count = entry.seed !== null ? 1 : entry.executions;
       try {
-        const res = await fetch("/generate_image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(entry)
-        });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || "Unknown error");
-        alert("✅ Queued! ID: " + (body.job_id || "N/A"));
-        // add to history
-        history.unshift({...entry, time: Date.now()});
+        for (let i = 0; i < count; i++) {
+          // decide seed per execution
+          const seedVal = entry.seed !== null
+            ? entry.seed
+            : Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+
+          const payload = {
+            prompt: entry.prompt,
+            realism_lora: entry.realism_lora,
+            detail_lora: entry.detail_lora,
+            workflow_type: entry.workflow_type,
+            seed: seedVal
+          };
+
+          const res = await fetch("/generate_image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const body = await res.json();
+          if (!res.ok) throw new Error(body.error || "Unknown error");
+        }
+        alert(`✅ Queued ${count} job${count>1?"s":""}!`);
+        history.unshift({ ...entry, time: Date.now() });
         renderHistory();
+        startPolling();
       } catch (err) {
         alert("❌ Failed to queue: " + err.message);
       }
     }
 
-    // Handle initial form → generate_prompt → show modal
+    // Handle Generate Prompt → show modal
     document.getElementById("promptForm").addEventListener("submit", async e => {
       e.preventDefault();
       const form = e.target;
@@ -226,33 +283,28 @@
       new bootstrap.Modal(document.getElementById("promptModal")).show();
     });
 
-    // When Use Prompt clicked, hide modal and queue
+    // When Use Prompt clicked, construct entry and queue
     document.getElementById("usePromptBtn").addEventListener("click", () => {
       const edited = document.getElementById("promptTextarea").value;
-      // Read or randomize the seed
-    let seedVal;
-    const seedField = document.getElementById("seed").value.trim();
-    if (seedField === "") {
-      // JS Number is precise up to 2^53-1
-      seedVal = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-    } else {
-      seedVal = parseInt(seedField, 10);
-    }
+      const seedField = document.getElementById("seed").value.trim();
+      const seedVal = seedField === "" ? null : parseInt(seedField, 10);
+      const execVal = parseInt(document.getElementById("executions").value, 10) || 1;
 
-    const entry = {
-      prompt: edited,
-      realism_lora: parseFloat(document.getElementById("realism_lora").value),
-      detail_lora: parseFloat(document.getElementById("detail_lora").value),
-      workflow_type: document.getElementById("workflow_type").value,
-      seed: seedVal
-    };
+      const entry = {
+        prompt: edited,
+        realism_lora: parseFloat(document.getElementById("realism_lora").value),
+        detail_lora: parseFloat(document.getElementById("detail_lora").value),
+        workflow_type: document.getElementById("workflow_type").value,
+        seed: seedVal,
+        executions: seedVal !== null ? 1 : execVal
+      };
+
       bootstrap.Modal.getInstance(document.getElementById("promptModal")).hide();
       queueFinalPrompt(entry);
     });
 
-    // Start polling & render
-    updateQueueStatus();
-    setInterval(updateQueueStatus, 15000);
+    // kick things off
+    
     renderHistory();
   </script>
 </body>

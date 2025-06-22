@@ -10,7 +10,7 @@
   },
   "2": {
     "inputs": {
-      "seed": 1044362531128963,
+      "seed": 1575443844639502,
       "steps": 35,
       "cfg": 5,
       "sampler_name": "dpmpp_2m_sde",
@@ -40,7 +40,7 @@
   },
   "4": {
     "inputs": {
-      "text": "white woman, very large breasts, tiny waist, baggy white crop top, blue panties, standing, arms crossed, soaking wet, beach, sunny day, nose piercing, nipple piercing, tattoos",
+      "text": "woman, pink lingerie, big breasts, narrow waist, black hair, pale skin, tattoos, seductive pose, wide hips, park, 8k UHD, DSLR",
       "clip": [
         "56",
         0
@@ -108,7 +108,7 @@
         "10",
         1
       ],
-      "strength": 0.3
+      "strength": 0.4
     },
     "class_type": "LoraLoader",
     "_meta": {
@@ -160,7 +160,7 @@
   },
   "63": {
     "inputs": {
-      "seed": 343227089775111,
+      "seed": 1575443844639502,
       "steps": 20,
       "cfg": 7,
       "sampler_name": "dpmpp_2m_sde",
