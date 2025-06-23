@@ -1,1 +1,5 @@
 .env
+final_image.json
+final_updated.json
+smoke_test.json
+smoke_updated.json

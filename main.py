@@ -24,23 +24,26 @@ def parse_args():
     return p.parse_args()
 
 def build_raw_prompt(subject, pose, setting, other):
-    return f"score_9 score_8up, score_7up{subject} {pose} {setting} {other} "
+    return f"{subject} {pose} {setting} {other} "
 
 def transform_prompt(raw: str) -> str:
+    system_prompt = r"""You are an expert spicy/nsfw prompt engineer for ComfyUI/Stable Diffusion.
+    Combine the raw prompt into a single, clean prompt, Danbooru/tag based prompt. Example: woman, large breasts, narrow waist, tall.
+    Return the prompt only."""
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[
             {"role": "system",
-             "content": (
-               "You are an expert prompt engineer for ComfyUI/Stable Diffusion. "
-               "Combine the raw prompt into a single, clean prompt, Danbooru/tag based propmt. Example: woman, large breasts, narow waist, tall. Return the prompt only."
-             )},
+             "content": system_prompt},
             {"role": "user", "content": raw},
         ],
         temperature=0.7,
         max_tokens=300,
     )
-    return resp.choices[0].message.content.strip()
+    base = resp.choices[0].message.content.strip()
+    prefix = "Stable_Yogis_PDXL_Positives "
+    suffix = " ,best quality, high quality"
+    return f"{prefix}{base}{suffix}"
 
 def load_json(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -51,41 +54,52 @@ def save_json(obj, path):
         json.dump(obj, f, indent=2, ensure_ascii=False)
     print(f"✅ Wrote updated workflow to {path}")
 
-def update_and_inject(input_path, output_path, prompt, realism, detail, seed=None):
-    flow = load_json(input_path)
+def update_and_inject(input_path: str,
+                      output_path: str,
+                      prompt: str,
+                      realism: float,
+                      detail: float,
+                      seed: int = None,
+                      filename_prefix: str = None) -> dict:
+    # 1) Load
+    with open(input_path, "r", encoding="utf-8") as f:
+        flow = json.load(f)
 
-    # Debug print to confirm titles
-    titles = [n.get("_meta",{}).get("title") for n in flow.values()]
-    print("DEBUG node titles:", titles)
-
-    # 1) Inject into the POS node
+    # 2) Inject POS & LoRAs (unchanged)…
     for node in flow.values():
-        if node.get("_meta",{}).get("title","").strip() == "POS":
+        title = node.get("_meta", {}).get("title","").strip()
+        if title == "POS":
             node["inputs"]["text"] = prompt
-            break
-    else:
-        raise ValueError(f"No POS node found; found titles {titles}")
+        if title == "Realism_LORA":
+            node["inputs"]["strength"] = realism
+        if title == "Detail_LORA":
+            node["inputs"]["strength"] = detail
 
-    # 2) Inject LoRA strengths
-    for which, strength in (("Realism_LORA", realism),
-                            ("Detail_LORA",  detail)):
-        for node in flow.values():
-            if node.get("_meta",{}).get("title","").strip() == which:
-                node["inputs"]["strength"] = strength
-                break
-        else:
-            raise ValueError(f"No node titled {which!r}; found titles {titles}")   
-    
-    # 3) Determine and inject seed into every KSampler
-    #    Use provided seed or pick a new random one
+    # 3) Inject seed into every KSampler
     seed_value = seed if seed is not None else random.randint(0, 2**53 - 1)
     for node in flow.values():
         if node.get("class_type") == "KSampler":
             node["inputs"]["seed"] = seed_value
 
-   # 4) Save _only_ the node map
-    save_json(flow, output_path)
-    return flow  # return the raw workflow dict
+    # 4) Inject filename_prefix into SAVE nodes
+    if filename_prefix:
+        print(f"DEBUG: injecting filename_prefix='{filename_prefix}'")  # debug
+        found = False
+        for nid, node in flow.items():
+            meta = node.get("_meta", {})
+            if meta.get("title","").strip() == "SAVE" and node.get("class_type") == "SaveImage":
+                node["inputs"]["filename_prefix"] = filename_prefix
+                print(f"  → SaveImage node {nid} now has prefix:", 
+                      node["inputs"].get("filename_prefix"))  # debug
+                found = True
+        if not found:
+            print("WARNING: no SaveImage node with title 'SAVE' found!")
+
+    # 5) Save & return
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(flow, f, indent=2, ensure_ascii=False)
+    print(f"✅ Wrote updated workflow to {output_path}")
+    return flow
 
 def main():
     args = parse_args()

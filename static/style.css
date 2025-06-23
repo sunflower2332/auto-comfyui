@@ -24,3 +24,50 @@ html, body {
     #history-col .list-group-item {
       cursor: pointer;
     }
+  
+        html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    .container-fluid {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    #main-row {
+      flex: 1;               /* fill remaining vertical space */
+      display: flex;
+      overflow: hidden;      /* contain columns */
+    }
+
+    /* History sidebar */
+    #history-col {
+      border-right: 1px solid #ddd;
+      padding-right: 1rem;
+      overflow-y: auto;      /* always scrollable if too tall */
+    }
+    /* Main form area */
+    #form-col {
+      flex: 1;
+      overflow-y: auto;      /* make the form scrollable */
+      padding-left: 1rem;
+    }
+
+    /* On mobile, cap history height */
+    @media (max-width: 576px) {
+      #history-col {
+        max-height: 200px;
+      }
+    }
+
+    /* Optional: make the card inside form fill its container */
+    #form-col .card {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    #form-col .card-body {
+      overflow-y: auto;
+      flex: 1;
+    }
