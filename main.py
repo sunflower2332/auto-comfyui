@@ -6,6 +6,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-4o-mini"
 
@@ -27,9 +29,7 @@ def build_raw_prompt(subject, pose, setting, other):
     return f"{subject} {pose} {setting} {other} "
 
 def transform_prompt(raw: str) -> str:
-    system_prompt = r"""You are an expert spicy/nsfw prompt engineer for ComfyUI/Stable Diffusion.
-    Combine the raw prompt into a single, clean prompt, Danbooru/tag based prompt. Example: woman, large breasts, narrow waist, tall.
-    Return the prompt only."""
+    system_prompt = SYSTEM_PROMPT
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[
