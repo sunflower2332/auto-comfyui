@@ -131,8 +131,8 @@ def main():
         "filename_prefix": job_id,
     }
     try:
-        print("→ Queueing to ComfyUI at 127.0.0.1:8188/prompt…")
-        r = requests.post("http://127.0.0.1:8188/prompt",
+        print("→ Queueing to ComfyUI at 127.0.0.1:8888/prompt…")
+        r = requests.post("http://127.0.0.1:8888/prompt",
                           json=payload, timeout=5)
         r.raise_for_status()
         print(f"🚀 Queued! ComfyUI response: {r.text}")

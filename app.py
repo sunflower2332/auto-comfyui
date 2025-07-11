@@ -78,7 +78,7 @@ def gallery():
 def queue_status():
     try:
         # Proxy the ComfyUI queue endpoint
-        r = requests.get("http://127.0.0.1:8188/queue", timeout=5)
+        r = requests.get("http://127.0.0.1:8888/queue", timeout=5)
         r.raise_for_status()
         return jsonify(r.json())
     except Exception as e:
@@ -157,7 +157,7 @@ def generate_image():
                     node["inputs"]["seed"] = this_seed
 
             r = requests.post(
-            "http://127.0.0.1:8188/prompt",
+            "http://127.0.0.1:8888/prompt",
             json=payload,
             timeout=5
             )
